@@ -6,11 +6,11 @@ Requires-Python: >=3.12
 Description-Content-Type: text/markdown
 Requires-Dist: httpx
 Requires-Dist: lxml
+Requires-Dist: pydantic
 Provides-Extra: dev
 Requires-Dist: pytest; extra == "dev"
 Requires-Dist: pdoc; extra == "dev"
 Requires-Dist: pytest-httpx; extra == "dev"
-
 
 # OAI-PMH Client
 

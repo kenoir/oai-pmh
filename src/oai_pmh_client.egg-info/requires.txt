@@ -1,5 +1,6 @@
 httpx
 lxml
+pydantic
 
 [dev]
 pytest
