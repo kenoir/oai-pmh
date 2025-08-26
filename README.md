@@ -14,7 +14,7 @@ uv pip install .
 
 ## Documentation
 
-Full documentation is available at [https://<user-or-org>.github.io/oai-pmh-client/](https://<user-or-org>.github.io/oai-pmh-client/).
+Full documentation is available at [https://kenoir.github.io/oai-pmh-client/](https://kenoir.github.io/oai-pmh-client/).
 
 ## Usage
 
