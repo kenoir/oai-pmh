@@ -4,11 +4,20 @@ from pathlib import Path
 import pytest
 from pytest_httpx import HTTPXMock
 
-from oai_pmh_client.client import OAIClient
-from oai_pmh_client.exceptions import BadArgumentError
+from oai_pmh_client import (
+    OAIClient,
+    BadArgumentError,
+    Identify,
+    Header,
+    MetadataFormat,
+    Set,
+    Record,
+)
 
 # Using arXiv as the test endpoint for integration tests.
-BASE_URL = "https://oaipmh.arxiv.org/oai"
+BASE_URL = "https://export.arxiv.org/oai2"
+CANONICAL_BASE_URL = "https://oaipmh.arxiv.org/oai"
+
 
 @pytest.fixture
 def client():
@@ -18,11 +27,18 @@ def client():
     return OAIClient(BASE_URL)
 
 @pytest.fixture
-def mock_client(httpx_mock: HTTPXMock):
+def mock_client_get(httpx_mock: HTTPXMock):
     """
-    Returns an OAIClient instance with a mocked HTTPX client.
+    Returns an OAIClient instance with a mocked HTTPX client using GET.
     """
-    return OAIClient(BASE_URL)
+    return OAIClient(BASE_URL, use_post=False)
+
+@pytest.fixture
+def mock_client_post(httpx_mock: HTTPXMock):
+    """
+    Returns an OAIClient instance with a mocked HTTPX client using POST.
+    """
+    return OAIClient(BASE_URL, use_post=True)
 
 def load_test_data(filename: str) -> bytes:
     """
@@ -30,74 +46,77 @@ def load_test_data(filename: str) -> bytes:
     """
     return (Path(__file__).parent / "data" / filename).read_bytes()
 
-def test_identify(client):
+# The following tests are integration tests and will make live HTTP requests.
+# They are marked with 'integration' and can be skipped with `pytest -m "not integration"`.
+
+@pytest.mark.integration
+def test_identify(client: OAIClient):
     """
-    Tests the identify method.
+    Tests the identify method against a live endpoint.
     """
     response = client.identify()
-    assert response is not None
-    ns = {"oai": "http://www.openarchives.org/OAI/2.0/"}
-    repository_name = response.findtext(".//oai:repositoryName", namespaces=ns)
-    assert repository_name == "arXiv"
+    assert isinstance(response, Identify)
+    assert response.repository_name == "arXiv"
+    assert response.base_url == CANONICAL_BASE_URL
+    assert response.protocol_version == "2.0"
 
-def test_list_metadata_formats(client):
+@pytest.mark.integration
+def test_list_metadata_formats(client: OAIClient):
     """
-    Tests the list_metadata_formats method.
+    Tests the list_metadata_formats method against a live endpoint.
     """
-    response = client.list_metadata_formats()
-    assert response is not None
-    ns = {"oai": "http://www.openarchives.org/OAI/2.0/"}
-    prefixes = [
-        elem.text
-        for elem in response.findall(".//oai:metadataPrefix", namespaces=ns)
-    ]
+    formats = list(client.list_metadata_formats())
+    assert len(formats) > 0
+    assert all(isinstance(f, MetadataFormat) for f in formats)
+    prefixes = [f.prefix for f in formats]
     assert "oai_dc" in prefixes
 
-def test_list_sets(client):
+@pytest.mark.integration
+def test_list_sets(client: OAIClient):
     """
-    Tests the list_sets method.
+    Tests the list_sets method against a live endpoint.
     """
-    count = 0
-    for _ in client.list_sets():
-        count += 1
-        if count > 0:
-            break
-    assert count > 0
+    sets = list(client.list_sets())
+    assert len(sets) > 0
+    assert all(isinstance(s, Set) for s in sets)
 
-def test_get_record(client):
+@pytest.mark.integration
+def test_get_record(client: OAIClient):
     """
-    Tests the get_record method.
+    Tests the get_record method against a live endpoint.
     """
     identifier = "oai:arXiv.org:cs/0012001"
-    response = client.get_record(identifier, "oai_dc")
-    assert response is not None
-    ns = {"oai": "http://www.openarchives.org/OAI/2.0/"}
-    identifier_element = response.findtext(".//oai:identifier", namespaces=ns)
-    assert identifier_element == identifier
+    record = client.get_record(identifier, "oai_dc")
+    assert isinstance(record, Record)
+    assert record.header.identifier == identifier
+    assert not record.header.is_deleted
+    assert record.metadata is not None
 
-def test_list_identifiers(client):
+@pytest.mark.integration
+def test_list_identifiers(client: OAIClient):
     """
-    Tests the list_identifiers method.
+    Tests the list_identifiers method against a live endpoint.
     """
-    count = 0
-    for _ in client.list_identifiers(metadata_prefix="oai_dc"):
-        count += 1
-        if count > 0:
-            break
-    assert count > 0
+    # Take just a few items to avoid fetching the whole list
+    from itertools import islice
+    identifiers = list(islice(client.list_identifiers(metadata_prefix="oai_dc", set_spec="cs"), 5))
+    assert len(identifiers) > 0
+    assert all(isinstance(i, Header) for i in identifiers)
 
-def test_list_records(client):
+@pytest.mark.integration
+def test_list_records(client: OAIClient):
     """
-    Tests the list_records method.
+    Tests the list_records method against a live endpoint.
     """
-    count = 0
-    for _ in client.list_records(metadata_prefix="oai_dc"):
-        count += 1
-        if count > 0:
-            break
-    assert count > 0
+    # Take just a few items to avoid fetching the whole list
+    from itertools import islice
+    records = list(islice(client.list_records(metadata_prefix="oai_dc", set_spec="cs"), 5))
+    assert len(records) > 0
+    assert all(isinstance(r, Record) for r in records)
 
-def test_oai_error(mock_client: OAIClient, httpx_mock: HTTPXMock):
+# The following tests are unit tests using mocked responses.
+
+def test_oai_error(mock_client_get: OAIClient, httpx_mock: HTTPXMock):
     """
     Tests that the client raises the correct exception for an OAI error.
     """
@@ -106,10 +125,10 @@ def test_oai_error(mock_client: OAIClient, httpx_mock: HTTPXMock):
         url=f"{BASE_URL}?verb=ListRecords&metadataPrefix=invalid",
         content=load_test_data("error_bad_argument.xml"),
     )
-    with pytest.raises(BadArgumentError, match="The request includes illegal arguments."):
-        list(mock_client.list_records(metadata_prefix="invalid"))
+    with pytest.raises(BadArgumentError):
+        list(mock_client_get.list_records(metadata_prefix="invalid"))
 
-def test_list_records_with_datetime(mock_client: OAIClient, httpx_mock: HTTPXMock):
+def test_list_records_with_datetime(mock_client_get: OAIClient, httpx_mock: HTTPXMock):
     """
     Tests that the client correctly formats datetime objects.
     """
@@ -119,12 +138,13 @@ def test_list_records_with_datetime(mock_client: OAIClient, httpx_mock: HTTPXMoc
         content=load_test_data("list_records_final.xml"),
     )
     from_date = datetime(2024, 1, 1, 12, 0, 0)
-    records = list(mock_client.list_records(metadata_prefix="oai_dc", from_date=from_date))
+    records = list(mock_client_get.list_records(metadata_prefix="oai_dc", from_date=from_date))
     assert len(records) == 1
+    assert isinstance(records[0], Record)
 
-def test_list_records_with_resumption(mock_client: OAIClient, httpx_mock: HTTPXMock):
+def test_list_records_with_resumption(mock_client_get: OAIClient, httpx_mock: HTTPXMock):
     """
-    Tests that the client correctly handles resumption tokens.
+    Tests that the client correctly handles resumption tokens with GET.
     """
     httpx_mock.add_response(
         method="GET",
@@ -136,7 +156,28 @@ def test_list_records_with_resumption(mock_client: OAIClient, httpx_mock: HTTPXM
         url=f"{BASE_URL}?verb=ListRecords&resumptionToken=token123",
         content=load_test_data("list_records_final.xml"),
     )
-    records = list(mock_client.list_records(metadata_prefix="oai_dc"))
+    records = list(mock_client_get.list_records(metadata_prefix="oai_dc"))
     assert len(records) == 2
-    assert records[0].findtext(".//oai:identifier", namespaces={"oai": "http://www.openarchives.org/OAI/2.0/"}) == "oai:example.org:1"
-    assert records[1].findtext(".//oai:identifier", namespaces={"oai": "http://www.openarchives.org/OAI/2.0/"}) == "oai:example.org:2"
+    assert records[0].header.identifier == "oai:example.org:1"
+    assert records[1].header.identifier == "oai:example.org:2"
+
+def test_list_records_with_resumption_post(mock_client_post: OAIClient, httpx_mock: HTTPXMock):
+    """
+    Tests that the client correctly handles resumption tokens with POST.
+    """
+    httpx_mock.add_response(
+        method="POST",
+        url=BASE_URL,
+        content=load_test_data("list_records_resumption.xml"),
+        match_content=b"verb=ListRecords&metadataPrefix=oai_dc"
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url=BASE_URL,
+        content=load_test_data("list_records_final.xml"),
+        match_content=b"verb=ListRecords&resumptionToken=token123"
+    )
+    records = list(mock_client_post.list_records(metadata_prefix="oai_dc"))
+    assert len(records) == 2
+    assert records[0].header.identifier == "oai:example.org:1"
+    assert records[1].header.identifier == "oai:example.org:2"

@@ -15,6 +15,15 @@ from .exceptions import (
     NoMetadataFormatsError,
     NoSetHierarchyError,
 )
+from .models import (
+    Identify,
+    Header,
+    MetadataFormat,
+    Set,
+    Record,
+    ResumptionToken,
+    NS,
+)
 
 OAI_ERROR_MAP = {
     "badArgument": BadArgumentError,
@@ -34,16 +43,25 @@ class OAIClient:
     """
     A client for interacting with an OAI-PMH repository.
     """
-    def __init__(self, base_url: str, client: httpx.Client | None = None, timeout: int = 20):
+
+    def __init__(
+        self,
+        base_url: str,
+        client: httpx.Client | None = None,
+        timeout: int = 20,
+        use_post: bool = False,
+    ):
         """
         Initializes the OAIClient.
 
         :param base_url: The base URL of the OAI-PMH repository.
         :param client: An optional httpx.Client instance.
         :param timeout: The timeout for HTTP requests in seconds.
+        :param use_post: Whether to use POST requests instead of GET.
         """
         self.base_url = base_url
         self._client = client or httpx.Client(timeout=timeout, follow_redirects=True)
+        self.use_post = use_post
 
     def _format_datestamp(self, dt: Datestamp) -> str:
         """
@@ -53,7 +71,7 @@ class OAIClient:
             return dt
         if dt.tzinfo is None:
             # If the datetime object is naive, assume it's in UTC.
-            return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            dt = dt.replace(tzinfo=timezone.utc)
         # If the datetime object is aware, convert it to UTC.
         return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -65,15 +83,21 @@ class OAIClient:
         :param kwargs: Additional request parameters.
         :return: The parsed XML response.
         """
-        params = {"verb": verb, **kwargs}
-        response = self._client.get(self.base_url, params=params)
+        params = {"verb": verb}
+        # Filter out None values so they aren't included in the query
+        for key, value in kwargs.items():
+            if value is not None:
+                params[key] = value
+
+        if self.use_post:
+            response = self._client.post(self.base_url, data=params)
+        else:
+            response = self._client.get(self.base_url, params=params)
+
         response.raise_for_status()
         xml = etree.fromstring(response.content)
 
-        # The namespace for OAI-PMH v2.0
-        ns = {"oai": "http://www.openarchives.org/OAI/2.0/"}
-        error = xml.find("oai:error", namespaces=ns)
-
+        error = xml.find("oai:error", namespaces=NS)
         if error is not None:
             code = error.get("code", "")
             message = error.text or ""
@@ -82,51 +106,62 @@ class OAIClient:
 
         return xml
 
-    def identify(self) -> etree._Element:
+    def identify(self) -> Identify:
         """
-        Performs the Identify request.
+        Performs the Identify request and returns a parsed Identify object.
         """
-        return self._request("Identify")
+        xml = self._request("Identify")
+        identify_element = xml.find("oai:Identify", namespaces=NS)
+        if identify_element is None:
+            raise OAIError("Invalid response: missing Identify element")
+        return Identify.from_xml(identify_element)
 
-    def list_metadata_formats(self, identifier: str | None = None) -> etree._Element:
+    def list_metadata_formats(
+        self, identifier: str | None = None
+    ) -> Iterator[MetadataFormat]:
         """
-        Performs the ListMetadataFormats request.
+        Performs the ListMetadataFormats request and yields MetadataFormat objects.
 
         :param identifier: An optional identifier to retrieve formats for a specific item.
         """
         params = {}
         if identifier:
             params["identifier"] = identifier
-        return self._request("ListMetadataFormats", **params)
+        xml = self._request("ListMetadataFormats", **params)
+        for element in xml.findall(".//oai:metadataFormat", namespaces=NS):
+            yield MetadataFormat.from_xml(element)
 
-    def list_sets(self) -> Iterator[etree._Element]:
+    def list_sets(self) -> Iterator[Set]:
         """
-        Performs the ListSets request and handles resumption tokens.
+        Performs the ListSets request, handles resumption tokens, and yields Set objects.
         """
         params = {}
-        ns = {"oai": "http://www.openarchives.org/OAI/2.0/"}
-
+        verb = "ListSets"
         while True:
-            xml = self._request("ListSets", **params)
+            xml = self._request(verb, **params)
+            for element in xml.findall(".//oai:set", namespaces=NS):
+                yield Set.from_xml(element)
 
-            for record in xml.findall(".//oai:set", namespaces=ns):
-                yield record
-
-            token_element = xml.find(".//oai:resumptionToken", namespaces=ns)
+            token_element = xml.find(".//oai:resumptionToken", namespaces=NS)
             if token_element is None or not token_element.text:
                 break
 
-            params = {"resumptionToken": token_element.text}
+            token = ResumptionToken.from_xml(token_element)
+            params = {"resumptionToken": token.value}
 
-    def get_record(self, identifier: str, metadata_prefix: str) -> etree._Element:
+    def get_record(self, identifier: str, metadata_prefix: str) -> Record:
         """
-        Performs the GetRecord request.
+        Performs the GetRecord request and returns a Record object.
 
         :param identifier: The identifier of the item.
         :param metadata_prefix: The metadata prefix for the requested format.
         """
         params = {"identifier": identifier, "metadataPrefix": metadata_prefix}
-        return self._request("GetRecord", **params)
+        xml = self._request("GetRecord", **params)
+        record_element = xml.find(".//oai:record", namespaces=NS)
+        if record_element is None:
+            raise OAIError("Invalid response: missing record element")
+        return Record.from_xml(record_element)
 
     def list_identifiers(
         self,
@@ -134,36 +169,36 @@ class OAIClient:
         from_date: Datestamp | None = None,
         until_date: Datestamp | None = None,
         set_spec: str | None = None,
-    ) -> Iterator[etree._Element]:
+    ) -> Iterator[Header]:
         """
-        Performs the ListIdentifiers request and handles resumption tokens.
+        Performs the ListIdentifiers request, handles resumption tokens, and yields Header objects.
 
         :param metadata_prefix: The metadata prefix for the requested format.
         :param from_date: An optional start date for selective harvesting.
         :param until_date: An optional end date for selective harvesting.
         :param set_spec: An optional set specification for selective harvesting.
         """
-        params = {"metadataPrefix": metadata_prefix}
-        if from_date:
-            params["from"] = self._format_datestamp(from_date)
-        if until_date:
-            params["until"] = self._format_datestamp(until_date)
-        if set_spec:
-            params["set"] = set_spec
-
-        ns = {"oai": "http://www.openarchives.org/OAI/2.0/"}
+        params = {
+            "metadataPrefix": metadata_prefix,
+            "from": self._format_datestamp(from_date) if from_date else None,
+            "until": self._format_datestamp(until_date) if until_date else None,
+            "set": set_spec,
+        }
+        verb = "ListIdentifiers"
 
         while True:
-            xml = self._request("ListIdentifiers", **params)
+            xml = self._request(verb, **params)
+            for element in xml.findall(".//oai:header", namespaces=NS):
+                yield Header.from_xml(element)
 
-            for header in xml.findall(".//oai:header", namespaces=ns):
-                yield header
-
-            token_element = xml.find(".//oai:resumptionToken", namespaces=ns)
+            token_element = xml.find(".//oai:resumptionToken", namespaces=NS)
             if token_element is None or not token_element.text:
                 break
 
-            params = {"resumptionToken": token_element.text}
+            token = ResumptionToken.from_xml(token_element)
+            # When using a resumption token, the original parameters must be omitted
+            params = {"resumptionToken": token.value}
+
 
     def list_records(
         self,
@@ -171,33 +206,32 @@ class OAIClient:
         from_date: Datestamp | None = None,
         until_date: Datestamp | None = None,
         set_spec: str | None = None,
-    ) -> Iterator[etree._Element]:
+    ) -> Iterator[Record]:
         """
-        Performs the ListRecords request and handles resumption tokens.
+        Performs the ListRecords request, handles resumption tokens, and yields Record objects.
 
         :param metadata_prefix: The metadata prefix for the requested format.
         :param from_date: An optional start date for selective harvesting.
         :param until_date: An optional end date for selective harvesting.
         :param set_spec: An optional set specification for selective harvesting.
         """
-        params = {"metadataPrefix": metadata_prefix}
-        if from_date:
-            params["from"] = self._format_datestamp(from_date)
-        if until_date:
-            params["until"] = self._format_datestamp(until_date)
-        if set_spec:
-            params["set"] = set_spec
-
-        ns = {"oai": "http://www.openarchives.org/OAI/2.0/"}
+        params = {
+            "metadataPrefix": metadata_prefix,
+            "from": self._format_datestamp(from_date) if from_date else None,
+            "until": self._format_datestamp(until_date) if until_date else None,
+            "set": set_spec,
+        }
+        verb = "ListRecords"
 
         while True:
-            xml = self._request("ListRecords", **params)
+            xml = self._request(verb, **params)
+            for element in xml.findall(".//oai:record", namespaces=NS):
+                yield Record.from_xml(element)
 
-            for record in xml.findall(".//oai:record", namespaces=ns):
-                yield record
-
-            token_element = xml.find(".//oai:resumptionToken", namespaces=ns)
+            token_element = xml.find(".//oai:resumptionToken", namespaces=NS)
             if token_element is None or not token_element.text:
                 break
 
-            params = {"resumptionToken": token_element.text}
+            token = ResumptionToken.from_xml(token_element)
+            # When using a resumption token, the original parameters must be omitted
+            params = {"resumptionToken": token.value}
