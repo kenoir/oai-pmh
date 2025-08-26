@@ -50,6 +50,7 @@ class OAIClient:
         client: httpx.Client | None = None,
         timeout: int = 20,
         use_post: bool = False,
+        datestamp_granularity: str = "YYYY-MM-DD",
     ):
         """
         Initializes the OAIClient.
@@ -58,10 +59,16 @@ class OAIClient:
         :param client: An optional httpx.Client instance.
         :param timeout: The timeout for HTTP requests in seconds.
         :param use_post: Whether to use POST requests instead of GET.
+        :param datestamp_granularity: The granularity to use when formatting datetime
+            objects for selective harvesting. Valid values per the OAI-PMH spec are
+            "YYYY-MM-DD" and "YYYY-MM-DDThh:mm:ssZ". Defaults to day-level granularity,
+            which matches repositories (like arXiv) that reject second-level timestamps
+            in from/until parameters.
         """
         self.base_url = base_url
         self._client = client or httpx.Client(timeout=timeout, follow_redirects=True)
         self.use_post = use_post
+        self.datestamp_granularity = datestamp_granularity
 
     def _format_datestamp(self, dt: Datestamp) -> str:
         """
@@ -73,7 +80,11 @@ class OAIClient:
             # If the datetime object is naive, assume it's in UTC.
             dt = dt.replace(tzinfo=timezone.utc)
         # If the datetime object is aware, convert it to UTC.
-        return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        dt = dt.astimezone(timezone.utc)
+        if self.datestamp_granularity == "YYYY-MM-DD":
+            return dt.strftime("%Y-%m-%d")
+        # Default / fallback to second-level granularity
+        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     def _request(self, verb: str, **kwargs) -> etree._Element:
         """

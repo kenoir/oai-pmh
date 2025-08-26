@@ -128,17 +128,29 @@ def test_oai_error(mock_client_get: OAIClient, httpx_mock: HTTPXMock):
     with pytest.raises(BadArgumentError):
         list(mock_client_get.list_records(metadata_prefix="invalid"))
 
-def test_list_records_with_datetime(mock_client_get: OAIClient, httpx_mock: HTTPXMock):
-    """
-    Tests that the client correctly formats datetime objects.
-    """
+def test_list_records_with_datetime_day_granularity(mock_client_get: OAIClient, httpx_mock: HTTPXMock):
+    """Tests day-level granularity (default)."""
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{BASE_URL}?verb=ListRecords&metadataPrefix=oai_dc&from=2024-01-01",
+        content=load_test_data("list_records_final.xml"),
+    )
+    from_date = datetime(2024, 1, 1, 12, 0, 0)
+    records = list(mock_client_get.list_records(metadata_prefix="oai_dc", from_date=from_date))
+    assert len(records) == 1
+    assert isinstance(records[0], Record)
+
+
+def test_list_records_with_datetime_seconds_granularity(httpx_mock: HTTPXMock):
+    """Tests second-level granularity when explicitly requested."""
+    client = OAIClient(BASE_URL, datestamp_granularity="YYYY-MM-DDThh:mm:ssZ")
     httpx_mock.add_response(
         method="GET",
         url=f"{BASE_URL}?verb=ListRecords&metadataPrefix=oai_dc&from=2024-01-01T12%3A00%3A00Z",
         content=load_test_data("list_records_final.xml"),
     )
     from_date = datetime(2024, 1, 1, 12, 0, 0)
-    records = list(mock_client_get.list_records(metadata_prefix="oai_dc", from_date=from_date))
+    records = list(client.list_records(metadata_prefix="oai_dc", from_date=from_date))
     assert len(records) == 1
     assert isinstance(records[0], Record)
 
