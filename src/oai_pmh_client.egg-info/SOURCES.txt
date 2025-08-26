@@ -1,8 +1,11 @@
 README.md
 pyproject.toml
 src/oai_pmh_client/__init__.py
+src/oai_pmh_client/client.py
+src/oai_pmh_client/exceptions.py
 src/oai_pmh_client.egg-info/PKG-INFO
 src/oai_pmh_client.egg-info/SOURCES.txt
 src/oai_pmh_client.egg-info/dependency_links.txt
 src/oai_pmh_client.egg-info/requires.txt
 src/oai_pmh_client.egg-info/top_level.txt
+tests/test_client.py

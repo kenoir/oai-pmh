@@ -29,7 +29,7 @@ jobs:
       - name: Install dependencies
         run: uv pip install .[dev]
       - name: Build documentation
-        run: uv run pdoc --html -o docs/pdoc src/oai_pmh_client
+        run: uv run pdoc -o docs/pdoc src/oai_pmh_client
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
