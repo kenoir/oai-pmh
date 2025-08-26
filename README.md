@@ -12,6 +12,10 @@ source .venv/bin/activate
 uv pip install .
 ```
 
+## Documentation
+
+Full documentation is available at [https://kenoir.github.io/oai-pmh-client/](https://kenoir.github.io/oai-pmh-client/).
+
 ## Usage
 
 Here is a simple example of how to use the client:
@@ -33,6 +37,47 @@ print(formats)
 # List the sets in the repository.
 sets = client.list_sets()
 print(sets)
+```
+
+### More Examples
+
+#### Listing Records
+
+You can list records with optional `from_date`, `until_date`, and `set_spec` filters.
+
+```python
+from datetime import datetime
+
+# List all records updated since the start of 2024 in the "cs.AI" set
+records = client.list_records(
+    metadata_prefix="oai_dc",
+    from_date=datetime(2024, 1, 1),
+    set_spec="cs.AI"
+)
+for record in records:
+    print(record.header.identifier, record.header.datestamp)
+```
+
+#### Getting a Single Record
+
+Retrieve a single record by its identifier and a metadata prefix.
+
+```python
+record = client.get_record("oai:arXiv.org:2401.00001", "oai_dc")
+print(record.metadata)
+```
+
+#### Error Handling
+
+The client will raise an `OAIError` subclass for errors returned by the OAI-PMH server.
+
+```python
+from oai_pmh_client.exceptions import IdDoesNotExistError
+
+try:
+    record = client.get_record("oai:arXiv.org:this-id-does-not-exist", "oai_dc")
+except IdDoesNotExistError as e:
+    print(f"Caught expected error: {e}")
 ```
 
 ## Testing
