@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.eggs/
+.egg-info/
+dist/
+build/
+*.egg
+*.whl
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+nosetests.xml
+coverage.xml
+*,cover
+*.log
+
+# uv
+uv.lock
+.uv/
+.uv-cache/
