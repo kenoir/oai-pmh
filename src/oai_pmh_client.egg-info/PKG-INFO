@@ -9,6 +9,8 @@ Requires-Dist: lxml
 Provides-Extra: dev
 Requires-Dist: pytest; extra == "dev"
 Requires-Dist: pdoc; extra == "dev"
+Requires-Dist: pytest-httpx; extra == "dev"
+
 
 # OAI-PMH Client
 

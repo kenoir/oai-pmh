@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/
+                               http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd">
+    <responseDate>2024-01-01T12:00:01Z</responseDate>
+    <request verb="ListRecords" resumptionToken="token123">http://example.com/oai</request>
+    <ListRecords>
+        <record>
+            <header>
+                <identifier>oai:example.org:2</identifier>
+                <datestamp>2024-01-01T00:00:01Z</datestamp>
+            </header>
+            <metadata>
+                <oai_dc:dc xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/"
+                           xmlns:dc="http://purl.org/dc/elements/1.1/"
+                           xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/oai_dc/ http://www.openarchives.org/OAI/2.0/oai_dc.xsd">
+                    <dc:title>Test Record 2</dc:title>
+                </oai_dc:dc>
+            </metadata>
+        </record>
+        <resumptionToken></resumptionToken>
+    </ListRecords>
+</OAI-PMH>

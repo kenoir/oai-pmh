@@ -4,3 +4,4 @@ lxml
 [dev]
 pytest
 pdoc
+pytest-httpx
