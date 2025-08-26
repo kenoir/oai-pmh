@@ -48,14 +48,42 @@ You can list records with optional `from_date`, `until_date`, and `set_spec` fil
 ```python
 from datetime import datetime
 
-# List all records updated since the start of 2024 in the "cs.AI" set
+# List all records updated since the start of 2024 in the "cs" (Computer Science) set
 records = client.list_records(
     metadata_prefix="oai_dc",
     from_date=datetime(2024, 1, 1),
-    set_spec="cs.AI"
+    set_spec="cs"
 )
 for record in records:
     print(record.header.identifier, record.header.datestamp)
+```
+
+##### Datestamp granularity
+
+Different OAI-PMH repositories declare (via the `Identify` response) which datestamp granularity they accept for the `from` and `until` parameters:
+
+* `YYYY-MM-DD` (day-level)
+* `YYYY-MM-DDThh:mm:ssZ` (second-level, UTC)
+
+Some repositories (e.g. arXiv) reject second-level timestamps for selective harvesting requests. By default the client now formats `datetime` values using day-level granularity to maximize compatibility. To opt into second-level precision, pass the `datestamp_granularity` argument when instantiating the client:
+
+```python
+client = OAIClient("https://oaipmh.arxiv.org/oai", datestamp_granularity="YYYY-MM-DDThh:mm:ssZ")
+
+from datetime import datetime
+records = client.list_records(
+    metadata_prefix="oai_dc",
+    from_date=datetime(2024, 1, 1, 12, 0, 0),
+)
+```
+
+You may also supply a pre-formatted string to override formatting entirely:
+
+```python
+records = client.list_records(
+    metadata_prefix="oai_dc",
+    from_date="2024-01-01",  # already correctly formatted
+)
 ```
 
 #### Getting a Single Record
